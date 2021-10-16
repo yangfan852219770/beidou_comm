@@ -7,6 +7,8 @@
 #include "beidou_read.h"
 #include "minmea.h"
 
+#define BILLION 1000000000L
+
 bool open_usb_port( const char *port_path, int *fd, int flags ){
     *fd = open( port_path, flags );
     if( *fd == -1 ){
@@ -125,14 +127,23 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     cfsetospeed( newtio, b_baud_rate );
     // End set baud rate
 
-    // Canonical Input, is line-oriented, the read buffer end by CR or LF
-    newtio->c_lflag |= ( ICANON | ECHO | ECHOE) ;
+    // Disable RTS/CTS hardware flow control
+    newtio->c_cflag &= ~CRTSCTS;
 
-    // Set control characters
+    /* *** Line option **** */
+    newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+
+    /* *** Output option **** */
+    // Prevent special interpretation of output bytes (e.g. newline chars)
+    newtio->c_oflag &= ~OPOST; 
+    // Prevent conversion of newline to carriage return/line feed
+    newtio->c_oflag &= ~ONLCR; 
+
+    /* *** Control characters **** */
     // Time to wait for data
-    newtio->c_cc[VTIME] = 0;
+    newtio->c_cc[VTIME] = 10; // 十分之一秒为单位
     // Minimum number of characters to read
-    newtio->c_cc[VMIN] = 100;
+    newtio->c_cc[VMIN] = 0;
 
     // Flushes the input and/or output queue
     tcflush( fd, TCIFLUSH );
@@ -156,9 +167,17 @@ void read_data(int fd)
     int res = 1;
     int count = 0;
     char buf[MINMEA_MAX_LENGTH];
+
+    // 测试解析的运行时间
+    uint64_t diff;
+    struct timespec start, end;
     while (res != -1)
     {
+        // measure monotonic time
+	    clock_gettime(CLOCK_MONOTONIC, &start);
+
         memset(buf, 0, MINMEA_MAX_LENGTH);
+        
         res = read(fd, buf, MINMEA_MAX_LENGTH);
         if (res == -1)
         {
@@ -166,33 +185,27 @@ void read_data(int fd)
             return;
         }
         buf[res] = '\0';
-        printf("No.%d Raw NMEA: %s\n", ++count, buf);
+        // 当前只输出ZDA
+        printf("No.%d, res = %d, Raw NMEA: %s\n", ++count, res, buf);
 
-        // Parse NMEA data
-        switch (minmea_sentence_id(buf, false))
-        {
-        // ZDA
-        case MINMEA_SENTENCE_ZDA:
-        {
-            struct minmea_sentence_zda frame;
-            if (minmea_parse_zda(&frame, buf))
-                printf("$xxZDA: %d:%d:%d:%d %02d.%02d.%d UTC%+03d:%02d\n",
-                       frame.time.hours,
-                       frame.time.minutes,
-                       frame.time.seconds,
-                       frame.time.microseconds,
-                       frame.date.day,
-                       frame.date.month,
-                       frame.date.year,
-                       frame.hour_offset,
-                       frame.minute_offset);
-            else
-                printf("$xxZDA sentence is not parsed\n");
-            break;
-        }
+        struct minmea_sentence_zda frame;
+        if (minmea_parse_zda(&frame, buf))
+            printf("$xxZDA: %d:%d:%d:%d %02d.%02d.%d UTC%+03d:%02d\n",
+                    frame.time.hours,
+                    frame.time.minutes,
+                    frame.time.seconds,
+                    frame.time.microseconds,
+                    frame.date.day,
+                    frame.date.month,
+                    frame.date.year,
+                    frame.hour_offset,
+                    frame.minute_offset);
+        else
+            printf("$xxZDA sentence is not parsed\n");
 
-        default:
-            break;
-        }
+        // mark the end time 
+        clock_gettime(CLOCK_MONOTONIC, &end);	
+        diff = BILLION * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+        printf("elapsed time = %llu nanoseconds\n", (long long unsigned int) diff);
     }
 }
