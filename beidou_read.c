@@ -2,8 +2,6 @@
  * Copyright © Yangfan <yangyangfan@stud.tjut.edu.cn>
  * This program is free software.
  */ 
-
-
 #include "beidou_read.h"
 #include "minmea.h"
 
@@ -25,7 +23,7 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     tcgetattr( fd, oldtio );
     // Initialize the new struct
     bzero(newtio, sizeof( *newtio ));
-    
+
     /**
      * CLOCAL: Local line
      * CREAD: Enable receiver
@@ -105,6 +103,9 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     // Set baud rate, other baud rate also can be set, such as 9600, 4800
     switch ( baud_rate )
     {
+    case 9600:
+        b_baud_rate = B9600;
+        break;
     case 115200:
         b_baud_rate = B115200;
         break;
@@ -131,19 +132,20 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     newtio->c_cflag &= ~CRTSCTS;
 
     /* *** Line option **** */
-    newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    // Canonical input 
+    newtio->c_lflag |= (ICANON | ECHO | ECHOE);
+    // raw input
+    //newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
 
-    /* *** Output option **** */
-    // Prevent special interpretation of output bytes (e.g. newline chars)
-    newtio->c_oflag &= ~OPOST; 
-    // Prevent conversion of newline to carriage return/line feed
-    newtio->c_oflag &= ~ONLCR; 
+    // disable software flow control
+    //newtio->c_iflag &= ~(IXON | IXOFF | IXANY);
+    //newtio->c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
 
     /* *** Control characters **** */
     // Time to wait for data
-    newtio->c_cc[VTIME] = 10; // 十分之一秒为单位
+    newtio->c_cc[VTIME] = 0; // 十分之一秒为单位
     // Minimum number of characters to read
-    newtio->c_cc[VMIN] = 0;
+    newtio->c_cc[VMIN] = 1;
 
     // Flushes the input and/or output queue
     tcflush( fd, TCIFLUSH );
@@ -166,11 +168,11 @@ void read_data(int fd)
 {
     int res = 1;
     int count = 0;
-    char buf[MINMEA_MAX_LENGTH];
-
+    unsigned char buf[MINMEA_MAX_LENGTH];
     // 测试解析的运行时间
     uint64_t diff;
     struct timespec start, end;
+
     while (res != -1)
     {
         // measure monotonic time
@@ -184,11 +186,14 @@ void read_data(int fd)
             perror("Read NMEA data error");
             return;
         }
-        buf[res] = '\0';
+        //buf[res] = '\0';
         // 当前只输出ZDA
         printf("No.%d, res = %d, Raw NMEA: %s\n", ++count, res, buf);
-
+        for(int i = 0; i < res; ++i)
+            printf("%x",(int)(buf[i]));
+        putchar('\n');
         struct minmea_sentence_zda frame;
+        
         if (minmea_parse_zda(&frame, buf))
             printf("$xxZDA: %d:%d:%d:%d %02d.%02d.%d UTC%+03d:%02d\n",
                     frame.time.hours,

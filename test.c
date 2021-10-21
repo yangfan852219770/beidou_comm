@@ -12,7 +12,7 @@ int main(int argc, char const *argv[])
     unsigned int fd;
     struct termios oldtio, newtio;
     // Open the port
-    bool res = open_usb_port( SERIALPATH, &fd, O_RDONLY | O_NOCTTY );
+    bool res = open_usb_port( SERIALPATH, &fd, O_RDONLY | O_NOCTTY);
     if( !res )
         return -1;
     // Set config

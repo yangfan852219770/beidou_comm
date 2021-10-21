@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "serial.h": "c",
+        "beidou_read.h": "c"
+    }
+}
