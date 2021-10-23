@@ -138,14 +138,14 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     //newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
 
     // disable software flow control
-    //newtio->c_iflag &= ~(IXON | IXOFF | IXANY);
+    newtio->c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | PARMRK);
     //newtio->c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
-
+    newtio->c_iflag |= IGNCR | IGNPAR | IGNBRK;
     /* *** Control characters **** */
     // Time to wait for data
-    newtio->c_cc[VTIME] = 0; // 十分之一秒为单位
+    newtio->c_cc[VTIME] = 10    ; // 十分之一秒为单位
     // Minimum number of characters to read
-    newtio->c_cc[VMIN] = 1;
+    newtio->c_cc[VMIN] = 0;
 
     // Flushes the input and/or output queue
     tcflush( fd, TCIFLUSH );
@@ -193,7 +193,7 @@ void read_data(int fd)
             printf("%x",(int)(buf[i]));
         putchar('\n');
         struct minmea_sentence_zda frame;
-        
+        /*
         if (minmea_parse_zda(&frame, buf))
             printf("$xxZDA: %d:%d:%d:%d %02d.%02d.%d UTC%+03d:%02d\n",
                     frame.time.hours,
@@ -207,7 +207,7 @@ void read_data(int fd)
                     frame.minute_offset);
         else
             printf("$xxZDA sentence is not parsed\n");
-
+        */
         // mark the end time 
         clock_gettime(CLOCK_MONOTONIC, &end);	
         diff = BILLION * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
