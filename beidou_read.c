@@ -5,7 +5,7 @@
 #include "beidou_read.h"
 #include "minmea.h"
 
-#define BILLION 1000000000L
+
 
 bool open_usb_port( const char *port_path, int *fd, int flags ){
     *fd = open( port_path, flags );
@@ -32,6 +32,7 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
 
     // Set data bit
     newtio->c_cflag &= ~CSIZE;
+
     switch (data_bit)
     {
     case 5:
@@ -59,11 +60,6 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     case 'O':
         // Enable parity bit
         newtio->c_cflag |=PARENB;
-        /**
-         * INPCK: Enable input parity
-         * ISTRIP: Ignore parity errors and pass the data, if you have a strict rule with frame
-         * delete this option.
-         */
         newtio->c_iflag |= ( INPCK | ISTRIP );
         // Enable odd parity
         newtio->c_cflag |= PARODD;
@@ -122,33 +118,27 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
         perror( "No such baud rate" );
         return false;
     }
-    // Input baud rate
+    
     cfsetispeed( newtio, b_baud_rate );
-    // Output baud rate
     cfsetospeed( newtio, b_baud_rate );
-    // End set baud rate
 
-    // Disable RTS/CTS hardware flow control
-    newtio->c_cflag &= ~CRTSCTS;
-
-    /* *** Line option **** */
     // Canonical input 
     newtio->c_lflag |= (ICANON | ECHO | ECHOE);
     // raw input
     //newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
 
     // disable software flow control
-    newtio->c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | PARMRK);
-    //newtio->c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
+    newtio->c_iflag &= ~(ISTRIP | IXON | IXOFF | IXANY | BRKINT | IMAXBEL | PARMRK);
+  
     newtio->c_iflag |= IGNCR | IGNPAR | IGNBRK;
-    /* *** Control characters **** */
+
     // Time to wait for data
-    newtio->c_cc[VTIME] = 10    ; // 十分之一秒为单位
+    //newtio->c_cc[VTIME] = 1    ; // 十分之一秒为单位
     // Minimum number of characters to read
-    newtio->c_cc[VMIN] = 0;
+    newtio->c_cc[VMIN] = 1;
 
     // Flushes the input and/or output queue
-    tcflush( fd, TCIFLUSH );
+    tcflush( fd, TCSANOW );
 
     /**
      * Set config to port
@@ -164,53 +154,32 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
         return true;
 }
 
-void read_data(int fd)
+void read_data(int fd, unsigned char *buf, int *actual_length, int timeout)
 {
-    int res = 1;
+    int ret;
     int count = 0;
-    unsigned char buf[MINMEA_MAX_LENGTH];
-    // 测试解析的运行时间
-    uint64_t diff;
-    struct timespec start, end;
+    fd_set rd;
+    struct timeval tv;
 
-    while (res != -1)
-    {
-        // measure monotonic time
-	    clock_gettime(CLOCK_MONOTONIC, &start);
+    tv.tv_sec = timeout;
+    tv.tv_usec = 0;
 
-        memset(buf, 0, MINMEA_MAX_LENGTH);
-        
-        res = read(fd, buf, MINMEA_MAX_LENGTH);
-        if (res == -1)
-        {
-            perror("Read NMEA data error");
-            return;
+    FD_ZERO(&rd);
+    FD_SET(fd, &rd);
+
+    // 检查串口数据是否准备好
+    ret = select(fd + 1, &rd, NULL, NULL, &tv);
+    if(ret > 0){
+        if (FD_ISSET(fd, &rd)) {
+            *actual_length = read(fd, buf, READ_MAX_LENGTH);
         }
-        //buf[res] = '\0';
-        // 当前只输出ZDA
-        printf("No.%d, res = %d, Raw NMEA: %s\n", ++count, res, buf);
-        for(int i = 0; i < res; ++i)
-            printf("%x",(int)(buf[i]));
-        putchar('\n');
-        struct minmea_sentence_zda frame;
-        /*
-        if (minmea_parse_zda(&frame, buf))
-            printf("$xxZDA: %d:%d:%d:%d %02d.%02d.%d UTC%+03d:%02d\n",
-                    frame.time.hours,
-                    frame.time.minutes,
-                    frame.time.seconds,
-                    frame.time.microseconds,
-                    frame.date.day,
-                    frame.date.month,
-                    frame.date.year,
-                    frame.hour_offset,
-                    frame.minute_offset);
-        else
-            printf("$xxZDA sentence is not parsed\n");
-        */
-        // mark the end time 
-        clock_gettime(CLOCK_MONOTONIC, &end);	
-        diff = BILLION * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
-        printf("elapsed time = %llu nanoseconds\n", (long long unsigned int) diff);
+    }
+    else if(ret == 0){
+        printf("[%s %d]timeout\n", __FUNCTION__, __LINE__);
+        return;
+    }
+    else{
+        printf("[%s %d] select error!\n", __FUNCTION__, __LINE__);
+        return;
     }
 }

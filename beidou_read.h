@@ -17,6 +17,9 @@
 
 #include "minmea.h"
 
+#define READ_MAX_LENGTH 128
+#define BILLION 1000000000L
+
 /**
  * Open the port
  * port_path: The path of port
@@ -44,6 +47,6 @@ bool set_parameter_port( struct termios * oldtio, struct termios * newtio, int f
  * fd: File descriptor for the port
  * 
  */
-void read_data( int fd);
+void read_data(int fd, unsigned char *buf, int *actual_length, int timeout);
 
 #endif
