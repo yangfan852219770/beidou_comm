@@ -140,6 +140,7 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     // Flushes the input and/or output queue
     tcflush( fd, TCSANOW );
 
+
     /**
      * Set config to port
      * TCSANOW: Make changes now without waiting for data to complete

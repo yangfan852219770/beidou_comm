@@ -2,7 +2,7 @@
 #include "beidou_read.h"
 
 #define SERIALPATH "/dev/ttyUSB0" 
-#define BAUD_RATE 230400
+#define BAUD_RATE 115200
 #define DATA_BIT 8
 #define PARITY_BIT 'N'
 #define STOP_BIT 1
