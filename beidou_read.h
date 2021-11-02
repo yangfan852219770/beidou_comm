@@ -19,6 +19,26 @@
 
 #define READ_MAX_LENGTH 128
 #define BILLION 1000000000L
+#define BAUD_LENGTH 11
+
+typedef struct nmea_time {
+    int hours;
+    int minutes;
+    int seconds;
+    int microseconds;
+}nmea_time;
+typedef struct nmea_date {
+    int day;
+    int month;
+    int year;
+}nmea_date;
+
+typedef struct nmea_sentence_zda {
+    struct nmea_time time;
+    struct nmea_date date;
+    int hour_offset;
+    int minute_offset;
+}nmea_sentence_zda;
 
 /**
  * Open the port
@@ -27,7 +47,7 @@
  * flags: The mode of accessing the port
  * Return true or false.
  */
-bool open_usb_port( const char *port_path, int *fd, int flags );
+bool open_usb_port( const char *port_path, uint16_t *fd, int flags );
 
 /**
  * Set parameters of the port, such as baud rate and parity
@@ -48,5 +68,11 @@ bool set_parameter_port( struct termios * oldtio, struct termios * newtio, int f
  * 
  */
 void read_data(int fd, unsigned char *buf, int *actual_length, int timeout);
+
+// 解析zda的时分秒
+bool nmea_parse_zda_time(nmea_time *nmea_t, const char * sentence);
+
+// 解析zda的日月年
+bool nmea_parse_zda_date(nmea_date *nmea_d, const char * sentence);
 
 #endif

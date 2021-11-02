@@ -9,10 +9,10 @@
 
 int main(int argc, char const *argv[])
 {
-    unsigned int fd;
+    uint16_t fd;
     struct termios oldtio, newtio;
 
-    unsigned char buf[READ_MAX_LENGTH];
+    uint8_t buf[READ_MAX_LENGTH];
     int len;
     // 等待1s
     int time = 1;
@@ -21,6 +21,9 @@ int main(int argc, char const *argv[])
     // 测试解析的运行时间
     uint64_t diff;
     struct timespec start, end;
+
+    nmea_time nmea_t;
+    nmea_date nmea_d;
 
     // Open the port
     bool res = open_usb_port( SERIALPATH, &fd, O_RDONLY | O_NOCTTY);
@@ -39,35 +42,33 @@ int main(int argc, char const *argv[])
         memset(buf, 0, MINMEA_MAX_LENGTH);
         // Read data
         read_data( fd, buf, &len, time);
+        printf("No.%d, res = %d, Raw NMEA: %s", ++count, len, buf);
 
-        //buf[len] = '\0';
-        printf("No.%d, res = %d, Raw NMEA: %s\n", ++count, len, buf);
-        printf("Hex = ");
-        for(int i = 0; i < len; ++i)
-            printf("%x",(int)(buf[i]));
-        putchar('\n');
-
-        struct minmea_sentence_zda frame;
-        /*
-        if (minmea_parse_zda(&frame, buf))
-            printf("$xxZDA: %d:%d:%d:%d %02d.%02d.%d UTC%+03d:%02d\n",
-                    frame.time.hours,
-                    frame.time.minutes,
-                    frame.time.seconds,
-                    frame.time.microseconds,
-                    frame.date.day,
-                    frame.date.month,
-                    frame.date.year,
-                    frame.hour_offset,
-                    frame.minute_offset);
-        else
-            printf("$xxZDA sentence is not parsed\n");
-        */
-
+        // 处理时分秒
+        res = nmea_parse_zda_time(&nmea_t, buf);
+        if(res){
+            printf("ZDA time: %d:%d:%d:%d\n", 
+                    nmea_t.hours, 
+                    nmea_t.minutes,
+                    nmea_t.seconds,
+                    nmea_t.microseconds);
+        }else
+            printf("ZDA time sentence is not parsed\n");
         // mark the end time 
         clock_gettime(CLOCK_MONOTONIC, &end);	
         diff = BILLION * (end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
         printf("elapsed time = %llu nanoseconds\n", (long long unsigned int) diff);
+
+        // 处理日月年
+        res = nmea_parse_zda_date(&nmea_d, buf);
+        if(res){
+            printf("ZDA date: %d.%02d.%02d\n",
+                    nmea_d.year,
+                    nmea_d.month,
+                    nmea_d.day);
+        }else
+            printf("ZDA date sentence is not parsed\n");
+        putchar('\n');
     }
     // Restore the old config
     tcsetattr( fd, TCSANOW, &oldtio );

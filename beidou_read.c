@@ -5,9 +5,10 @@
 #include "beidou_read.h"
 #include "minmea.h"
 
+#include <ctype.h>
+#include <stdlib.h>
 
-
-bool open_usb_port( const char *port_path, int *fd, int flags ){
+bool open_usb_port( const char *port_path, uint16_t *fd, int flags ){
     *fd = open( port_path, flags );
     if( *fd == -1 ){
         perror( "Open serial port error" );
@@ -18,11 +19,31 @@ bool open_usb_port( const char *port_path, int *fd, int flags ){
 }
 
 bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd, int baud_rate, int data_bit, char parity_flag, int stop_bit ){
-    int b_baud_rate = -1;
+    int i;
+    int flag;
+
+    int speed_arr[BAUD_LENGTH] = {B921600, B576000, B460800,B230400, B115200, B19200, B9600, B4800, B2400, B1200, B300};
+    int name_arr[BAUD_LENGTH]  = {921600,576000,460800,230400, 115200,  19200,  9600,  4800,  2400,  1200,  300};
     // Save the config of board to restore when close the port
     tcgetattr( fd, oldtio );
     // Initialize the new struct
     bzero(newtio, sizeof( *newtio ));
+    
+    // 设置波特率
+    flag = 0;
+    for(i=0; i < BAUD_LENGTH; ++i){
+        if  (baud_rate == name_arr[i])
+        {
+            flag = 1;
+            cfsetispeed( newtio, speed_arr[i] );
+            cfsetospeed( newtio, speed_arr[i] );
+            break;
+        }
+    }
+    if(flag == 0){
+        perror("Baud rate not in range\n");
+        return false;
+    }
 
     /**
      * CLOCAL: Local line
@@ -96,36 +117,10 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     }
     // End set stop bit
 
-    // Set baud rate, other baud rate also can be set, such as 9600, 4800
-    switch ( baud_rate )
-    {
-    case 9600:
-        b_baud_rate = B9600;
-        break;
-    case 115200:
-        b_baud_rate = B115200;
-        break;
-    case 230400:
-        b_baud_rate = B230400;
-        break;
-    case 460800:
-        b_baud_rate = B460800;
-        break;
-    case 921600:
-        b_baud_rate = B921600;
-        break;
-    default:
-        perror( "No such baud rate" );
-        return false;
-    }
-    
-    cfsetispeed( newtio, b_baud_rate );
-    cfsetospeed( newtio, b_baud_rate );
-
     // Canonical input 
     newtio->c_lflag |= (ICANON | ECHO | ECHOE);
     // raw input
-    //newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
 
     // disable software flow control
     newtio->c_iflag &= ~(ISTRIP | IXON | IXOFF | IXANY | BRKINT | IMAXBEL | PARMRK);
@@ -135,7 +130,7 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     // Time to wait for data
     //newtio->c_cc[VTIME] = 1    ; // 十分之一秒为单位
     // Minimum number of characters to read
-    newtio->c_cc[VMIN] = 1;
+    //newtio->c_cc[VMIN] = 1;
 
     // Flushes the input and/or output queue
     tcflush( fd, TCSANOW );
@@ -155,7 +150,7 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
         return true;
 }
 
-void read_data(int fd, unsigned char *buf, int *actual_length, int timeout)
+void read_data(int fd, uint8_t *buf, int *actual_length, int timeout)
 {
     int ret;
     int count = 0;
@@ -183,4 +178,119 @@ void read_data(int fd, unsigned char *buf, int *actual_length, int timeout)
         printf("[%s %d] select error!\n", __FUNCTION__, __LINE__);
         return;
     }
+}
+
+bool nmea_parse_zda_time(nmea_time *nmea_t, const char *sentence){
+    const char ch = ',';
+    const char *type = "ZDA";
+    const char *field = sentence;
+
+    // TODO 校验和是否正确
+
+    // 校验
+    if(!field){
+         printf("[%s %d] ZDA sentence is null\n", __FUNCTION__, __LINE__);
+         return false;
+    }
+    if(field[0] != '$'){
+        printf("[%s %d] ZDA sentence not begin with $\n", __FUNCTION__, __LINE__);
+        return false;
+    }
+    // 是否为ZDA语句
+    if(strncmp(field + 3, type, 3) != 0) {
+        printf("[%s %d] This sentence is not ZDA\n", __FUNCTION__, __LINE__);
+        return false;
+    }
+
+    // 处理时分秒
+    // 如果没有解析数据，则为-1
+    int h = -1, m = -1, s = -1, u = -1;
+    field = strchr(field, ch) + 1;
+    if(field){
+        char hArr[] = {field[0], field[1], '\0'};
+        char mArr[] = {field[2], field[3], '\0'};
+        char sArr[] = {field[4], field[5], '\0'};
+        h = atoi(hArr);
+        m = atoi(mArr);
+        s = atoi(sArr);
+    }
+    
+    // 处理毫秒
+    field += 6;
+    if (*field++ == '.') {
+        uint32_t value = 0;
+        uint32_t scale = 1000000LU;
+        while (isdigit((unsigned char) *field) && scale > 1) {
+            value = (value * 10) + (*field++ - '0');
+            scale /= 10;
+        }
+        u = value * scale;
+    } else {
+        u = 0;
+    }
+
+    nmea_t->hours = h;
+    nmea_t->minutes = m;
+    nmea_t->seconds = s;
+    nmea_t->microseconds = u;
+    
+    return true;
+}
+
+bool nmea_parse_zda_date(nmea_date *nmea_d, const char * sentence){
+    const char ch = ',';
+    const char *type = "ZDA";
+    const char *field = sentence;
+
+    // TODO 校验和是否正确
+
+    // 校验
+    if(!field){
+         printf("[%s %d] ZDA sentence is null\n", __FUNCTION__, __LINE__);
+         return false;
+    }
+    if(field[0] != '$'){
+        printf("[%s %d] ZDA sentence not begin with $\n", __FUNCTION__, __LINE__);
+        return false;
+    }
+    // 是否为ZDA语句
+    if(strncmp(field + 3, type, 3) != 0) {
+        printf("[%s %d] This sentence is not ZDA\n", __FUNCTION__, __LINE__);
+        return false;
+    }
+    int d = -1, m = -1, y = -1;
+    // 跳过首部
+    field = strchr(field, ch) + 1;
+    // 跳过时分秒
+    field = strchr(field, ch) + 1;
+
+    // 日
+    if(field){
+        char dArr[] = {field[0], field[1], '\0'};
+        d = atoi(dArr);
+        // 跳过日
+        field = strchr(field, ch) + 1;
+    }
+
+    // 月
+    if(field){
+        char mArr[] = {field[0], field[1], '\0'};
+        m = atoi(mArr);
+        // 跳过月
+        field = strchr(field, ch) + 1;
+    }
+    
+    // 年
+    if(field){
+        char yArr[5];
+        strncpy(yArr, field, 4);
+        yArr[4] = '\0';
+        y = atoi(yArr);
+    }
+   
+    nmea_d->day = d;
+    nmea_d->month = m;
+    nmea_d->year = y;
+
+    return true;
 }
