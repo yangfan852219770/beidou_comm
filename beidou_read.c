@@ -120,7 +120,7 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     // Canonical input 
     newtio->c_lflag |= (ICANON | ECHO | ECHOE);
     // raw input
-    newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    //newtio->c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
 
     // disable software flow control
     newtio->c_iflag &= ~(ISTRIP | IXON | IXOFF | IXANY | BRKINT | IMAXBEL | PARMRK);
@@ -128,13 +128,12 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
     newtio->c_iflag |= IGNCR | IGNPAR | IGNBRK;
 
     // Time to wait for data
-    //newtio->c_cc[VTIME] = 1    ; // 十分之一秒为单位
+    newtio->c_cc[VTIME] = 1; // 十分之一秒为单位
     // Minimum number of characters to read
-    //newtio->c_cc[VMIN] = 1;
+    newtio->c_cc[VMIN] = 1;
 
     // Flushes the input and/or output queue
     tcflush( fd, TCSANOW );
-
 
     /**
      * Set config to port
@@ -148,36 +147,6 @@ bool set_parameter_port( struct termios *newtio, struct termios *oldtio, int fd,
         return false;
     } else
         return true;
-}
-
-void read_data(int fd, uint8_t *buf, int *actual_length, int timeout)
-{
-    int ret;
-    int count = 0;
-    fd_set rd;
-    struct timeval tv;
-
-    tv.tv_sec = timeout;
-    tv.tv_usec = 0;
-
-    FD_ZERO(&rd);
-    FD_SET(fd, &rd);
-
-    // 检查串口数据是否准备好
-    ret = select(fd + 1, &rd, NULL, NULL, &tv);
-    if(ret > 0){
-        if (FD_ISSET(fd, &rd)) {
-            *actual_length = read(fd, buf, READ_MAX_LENGTH);
-        }
-    }
-    else if(ret == 0){
-        printf("[%s %d]timeout\n", __FUNCTION__, __LINE__);
-        return;
-    }
-    else{
-        printf("[%s %d] select error!\n", __FUNCTION__, __LINE__);
-        return;
-    }
 }
 
 bool nmea_parse_zda_time(nmea_time *nmea_t, const char *sentence){
@@ -293,4 +262,34 @@ bool nmea_parse_zda_date(nmea_date *nmea_d, const char * sentence){
     nmea_d->year = y;
 
     return true;
+}
+
+void read_data(int fd, uint8_t *buf, int *actual_length, int timeout)
+{
+    int ret;
+    int count = 0;
+    fd_set rd;
+    struct timeval tv;
+
+    tv.tv_sec = timeout;
+    tv.tv_usec = 0;
+
+    FD_ZERO(&rd);
+    FD_SET(fd, &rd);
+
+    // 检查串口数据是否准备好
+    ret = select(fd + 1, &rd, NULL, NULL, &tv);
+    if(ret > 0){
+        if (FD_ISSET(fd, &rd)) {
+            *actual_length = read(fd, buf, READ_MAX_LENGTH);
+        }
+    }
+    else if(ret == 0){
+        printf("[%s %d]timeout\n", __FUNCTION__, __LINE__);
+        return;
+    }
+    else{
+        printf("[%s %d] select error!\n", __FUNCTION__, __LINE__);
+        return;
+    }
 }
